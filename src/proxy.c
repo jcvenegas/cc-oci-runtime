@@ -34,6 +34,14 @@ struct watcher_proxy_data
 	GIOChannel  *channel;
 	gchar       *msg_to_send;
 	GString     *msg_received;
+	int          socket_fd;
+	/**
+	 * indicates that we expect an out-of-band file descriptor
+	 * from proxy socket.
+	 * if NULL read watcher WILL NOT wait for oob data,
+	 * otherwise it WILL wait
+	 */
+	int         *oob_fd;
 };
 
 /** Format of a proxy message */
@@ -453,16 +461,17 @@ out:
  * \param proxy \ref cc_proxy.
  * \param msg_to_send gchar.
  * \param msg_received GString.
+ * \param oob_fd int.
  *
  * \return \c true on success, else \c false.
  */
 static gboolean
 cc_proxy_run_cmd(struct cc_proxy *proxy,
 		gchar *msg_to_send,
-		GString* msg_received)
+		GString* msg_received,
+		int *oob_fd)
 {
 	GIOChannel        *channel = NULL;
-	int                fd;
 	struct watcher_proxy_data proxy_data;
 	gboolean ret = false;
 	gboolean hyper_result = false;
@@ -480,9 +489,11 @@ cc_proxy_run_cmd(struct cc_proxy *proxy,
 
 	proxy_data.msg_to_send = msg_to_send;
 
-	fd = g_socket_get_fd (proxy->socket);
+	proxy_data.oob_fd = oob_fd;
 
-	channel = g_io_channel_unix_new(fd);
+	proxy_data.socket_fd = g_socket_get_fd (proxy->socket);
+
+	channel = g_io_channel_unix_new(proxy_data.socket_fd);
 	if (! channel) {
 		g_critical("failed to create I/O channel");
 		goto out;
@@ -574,7 +585,7 @@ cc_proxy_cmd_hello (struct cc_proxy *proxy, const char *container_id)
 
 	msg_received = g_string_new("");
 
-	if (! cc_proxy_run_cmd(proxy, msg_to_send, msg_received)) {
+	if (! cc_proxy_run_cmd(proxy, msg_to_send, msg_received, NULL)) {
 		g_critical("failed to run proxy command %s: %s",
 				proxy_cmd,
 				msg_received->str);
@@ -644,7 +655,7 @@ cc_proxy_cmd_bye (struct cc_proxy *proxy)
 
 	msg_received = g_string_new ("");
 
-	if (! cc_proxy_run_cmd (proxy, msg_to_send, msg_received)) {
+	if (! cc_proxy_run_cmd(proxy, msg_to_send, msg_received, NULL)) {
 		g_critical ("failed to run proxy command %s: %s",
 				proxy_cmd,
 				msg_received->str);
@@ -673,21 +684,117 @@ out:
  *
  * \return \c true on success, else \c false.
  */
-static gboolean
-cc_proxy_cmd_allocate_io (struct cc_proxy *proxy)
+gboolean
+cc_proxy_cmd_allocate_io (struct cc_proxy *proxy,
+	int *proxy_io_fd,
+	int *ioBase )
 {
+	JsonObject        *obj = NULL;
+	JsonObject        *data = NULL;
+	JsonNode          *root = NULL;
+	JsonGenerator     *generator = NULL;
+	gchar             *msg_to_send = NULL;
+	GString           *msg_received = NULL;
+	gboolean           ret = false;
+	JsonParser        *parser = NULL;
+	GError            *error = NULL;
+	JsonReader        *reader = NULL;
+
+	const gchar       *proxy_cmd = "allocateIO";
+	int n_streams = IO_STREAMS_NUMBER;
+
 	if (! proxy) {
 		return false;
 	}
 
-	/* FIXME: TODO:
-	 *
-	 * - call "allocateIO" proxy command.
-	 * - get both stdout + stderr sequence numbers.
-	 * - store in cc_proxy object.
-	 */
+	obj = json_object_new ();
+	data = json_object_new ();
 
-	return true;
+	json_object_set_string_member (obj, "id", proxy_cmd);
+
+	json_object_set_int_member (data, "nStreams",
+		n_streams);
+
+	json_object_set_object_member (obj, "data", data);
+
+	root = json_node_new (JSON_NODE_OBJECT);
+	generator = json_generator_new ();
+	json_node_take_object (root, obj);
+
+	json_generator_set_root (generator, root);
+	g_object_set (generator, "pretty", FALSE, NULL);
+
+	msg_to_send = json_generator_to_data (generator, NULL);
+
+	msg_received = g_string_new("");
+
+	if (! cc_proxy_run_cmd(proxy, msg_to_send, msg_received, proxy_io_fd)) {
+		g_critical("failed to run proxy command %s: %s",
+				proxy_cmd,
+				msg_received->str);
+		goto out;
+	}
+
+	g_debug("msg received: %s", msg_received->str);
+
+	if (!ioBase) {
+		ret = true;
+		goto out;
+	}
+
+	/* parse message received to get ioBase */
+	parser = json_parser_new();
+	ret = json_parser_load_from_data(parser,
+		msg_received->str,
+		(gssize) msg_received->len,
+		&error);
+
+	if (! ret) {
+		g_critical ("failed to parse proxy response: %s",
+				error->message);
+		g_error_free (error);
+		goto out;
+	}
+
+	reader = json_reader_new(json_parser_get_root(parser));
+	if (!reader) {
+		g_critical("failed to create reader");
+		goto out;
+	}
+
+	ret = json_reader_read_member (reader, "data");
+	if (! ret) {
+		g_critical ("failed to find proxy data");
+		goto out;
+	}
+
+	ret = json_reader_read_member (reader, "ioBase");
+	if (! ret) {
+		g_critical ("failed to find ioBase");
+		goto out;
+	}
+
+	*ioBase = (int) json_reader_get_int_value(reader);
+
+	json_reader_end_member (reader);
+
+	ret = true;
+
+out:
+	if (reader) {
+		g_object_unref (reader);
+	}
+	if (parser) {
+		g_object_unref (parser);
+	}
+	if (msg_received) {
+		g_string_free(msg_received, true);
+	}
+	if (obj) {
+		json_object_unref (obj);
+	}
+
+	return ret;
 }
 
 /**
@@ -807,7 +914,7 @@ cc_proxy_run_hyper_cmd (struct cc_oci_config *config,
 
 	msg_received = g_string_new("");
 
-	if (! cc_proxy_run_cmd(config->proxy, msg_to_send, msg_received)) {
+	if (! cc_proxy_run_cmd(config->proxy, msg_to_send, msg_received, NULL)) {
 		g_critical("failed to run hyper cmd %s: %s",
 				cmd,
 				msg_received->str);
