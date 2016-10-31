@@ -34,6 +34,14 @@ struct watcher_proxy_data
 	GIOChannel  *channel;
 	gchar       *msg_to_send;
 	GString     *msg_received;
+	int          socket_fd;
+	/**
+	 * indicates that we expect an out-of-band file descriptor
+	 * from proxy socket.
+	 * if NULL read watcher WILL NOT wait for oob data,
+	 * otherwise it WILL wait
+	 */
+	int         *oob_fd;
 };
 
 /** Format of a proxy message */
@@ -453,16 +461,17 @@ out:
  * \param proxy \ref cc_proxy.
  * \param msg_to_send gchar.
  * \param msg_received GString.
+ * \param oob_fd int.
  *
  * \return \c true on success, else \c false.
  */
 static gboolean
 cc_proxy_run_cmd(struct cc_proxy *proxy,
 		gchar *msg_to_send,
-		GString* msg_received)
+		GString* msg_received,
+		int *oob_fd)
 {
 	GIOChannel        *channel = NULL;
-	int                fd;
 	struct watcher_proxy_data proxy_data;
 	gboolean ret = false;
 	gboolean hyper_result = false;
@@ -480,9 +489,11 @@ cc_proxy_run_cmd(struct cc_proxy *proxy,
 
 	proxy_data.msg_to_send = msg_to_send;
 
-	fd = g_socket_get_fd (proxy->socket);
+	proxy_data.oob_fd = oob_fd;
 
-	channel = g_io_channel_unix_new(fd);
+	proxy_data.socket_fd = g_socket_get_fd (proxy->socket);
+
+	channel = g_io_channel_unix_new(proxy_data.socket_fd);
 	if (! channel) {
 		g_critical("failed to create I/O channel");
 		goto out;
@@ -574,7 +585,7 @@ cc_proxy_cmd_hello (struct cc_proxy *proxy, const char *container_id)
 
 	msg_received = g_string_new("");
 
-	if (! cc_proxy_run_cmd(proxy, msg_to_send, msg_received)) {
+	if (! cc_proxy_run_cmd(proxy, msg_to_send, msg_received, NULL)) {
 		g_critical("failed to run proxy command %s: %s",
 				proxy_cmd,
 				msg_received->str);
@@ -644,7 +655,7 @@ cc_proxy_cmd_bye (struct cc_proxy *proxy)
 
 	msg_received = g_string_new ("");
 
-	if (! cc_proxy_run_cmd (proxy, msg_to_send, msg_received)) {
+	if (! cc_proxy_run_cmd(proxy, msg_to_send, msg_received, NULL)) {
 		g_critical ("failed to run proxy command %s: %s",
 				proxy_cmd,
 				msg_received->str);
@@ -807,7 +818,7 @@ cc_proxy_run_hyper_cmd (struct cc_oci_config *config,
 
 	msg_received = g_string_new("");
 
-	if (! cc_proxy_run_cmd(config->proxy, msg_to_send, msg_received)) {
+	if (! cc_proxy_run_cmd(config->proxy, msg_to_send, msg_received, NULL)) {
 		g_critical("failed to run hyper cmd %s: %s",
 				cmd,
 				msg_received->str);
