@@ -1241,19 +1241,16 @@ exit:
  * Create a connection to the VM, run a command and disconnect.
  *
  * \param config \ref cc_oci_config.
- * \param argc Argument count.
- * \param argv Argument vector.
+ * \param process \ref oci_cfg_process
  *
  * \return \c true on success, else \c false.
  */
 gboolean
 cc_oci_vm_connect (struct cc_oci_config *config,
-		int argc,
-		char *const argv[]) {
+		struct oci_cfg_process *process)
+{
 	gchar     **args = NULL;
 	gboolean    ret = false;
-	guint       args_len = 0;
-	gboolean    cmd_is_just_shell = false;
 #if 0
 	GError     *err = NULL;
 	GPid        pid;
@@ -1266,9 +1263,7 @@ cc_oci_vm_connect (struct cc_oci_config *config,
 #endif
 
 	g_assert (config);
-	g_assert (argc);
-	g_assert (argv);
-
+	g_assert (process);
 #if 0
 	/* create a new main loop */
 	main_loop = g_main_loop_new (NULL, 0);
@@ -1295,12 +1290,12 @@ cc_oci_vm_connect (struct cc_oci_config *config,
 		goto out;
 	}
 
-	ret = true;
 #else
 	g_critical ("not implemented yet");
-	ret = false;
+	goto out;
 #endif
 
+	ret = true;
 out:
 	if (args) {
 		g_strfreev (args);
