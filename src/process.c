@@ -556,7 +556,7 @@ out:
  * \param shim_socket_fd Writable file descriptor caller should use to
  *   send the proxy IO fd to child before \ref CC_OCI_SHIM is launched.
  *
- * \return \c true on success, else \c false.
+ * \return \c shim-pid  on success, else \c -1.
  */
 static gboolean
 cc_shim_launch (struct cc_oci_config *config,
@@ -564,8 +564,7 @@ cc_shim_launch (struct cc_oci_config *config,
 		int *shim_args_fd,
 		int *shim_socket_fd)
 {
-	gboolean  ret = false;
-	GPid      pid;
+	GPid      pid = -1;
 	int       child_err_pipe[2] = {-1, -1};
 	int       shim_args_pipe[2] = {-1, -1};
 	int       shim_socket[2] = {-1, -1};
@@ -597,7 +596,7 @@ cc_shim_launch (struct cc_oci_config *config,
 	}
 
 	/* Inform caller of workload PID */
-	pid = config->state.workload_pid = fork ();
+	pid = fork ();
 
 	if (pid < 0) {
 		g_critical ("failed to spawn shim child: %s",
@@ -743,14 +742,13 @@ child_failed:
 	*shim_args_fd = shim_args_pipe[1];
 	*shim_socket_fd = shim_socket[1];
 
-	ret = true;
 
 out:
 	close (child_err_pipe[1]);
 	close (shim_args_pipe[0]);
 	close (shim_socket[0]);
 
-	return ret;
+	return pid;
 }
 
 /*!
@@ -959,7 +957,11 @@ child_failed:
 	 *
 	 * The child blocks waiting for a write to shim_args_fd.
 	 */
-	if (! cc_shim_launch (config, &shim_err_fd, &shim_args_fd, &shim_socket_fd)) {
+	config->state.workload_pid = cc_shim_launch (config,
+							&shim_err_fd,
+							&shim_args_fd,
+							&shim_socket_fd);
+	if (config->state.workload_pid < 0 ) {
 		goto out;
 	}
 
@@ -1174,6 +1176,12 @@ out:
 		g_ptr_array_free(additional_args, TRUE);
 	}
 
+	if ( !ret && config->state.workload_pid > 0 ) {
+		g_critical("killing shim with pid:%d",
+				config->state.workload_pid);
+		kill(config->state.workload_pid, SIGKILL);
+	}
+
 	return ret;
 }
 
@@ -1260,16 +1268,19 @@ cc_oci_exec_shim (struct cc_oci_config *config,
 	int                proxy_fd = -1;
 	int                proxy_io_fd = -1;
 	int                ioBase = -1;
+	GPid               shim_pid= -1;
 	GError            *error = NULL;
 
 	if(! (config && process)){
 		goto out;
 	}
 
-	if (! cc_shim_launch (config,
-				&shim_err_fd,
-				&shim_args_fd,
-				&shim_socket_fd)) {
+	shim_pid = cc_shim_launch (config,
+			&shim_err_fd,
+			&shim_args_fd,
+			&shim_socket_fd);
+
+	if (shim_pid < 0) {
 		goto out;
 	}
 
@@ -1348,6 +1359,11 @@ out:
 	if (shim_err_fd != -1) close (shim_err_fd);
 	if (shim_args_fd != -1) close (shim_args_fd);
 	if (shim_socket_fd != -1) close (shim_socket_fd);
+
+	if ( !ret && shim_pid > 0 ) {
+		g_critical("killing shim with pid:%d", shim_pid);
+		kill(shim_pid, SIGKILL);
+	}
 	return ret;
 }
 
