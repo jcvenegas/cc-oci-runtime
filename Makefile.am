@@ -246,7 +246,17 @@ endif
 
 proxy_ldflags = "-X main.socketPath=$(localstatedir)/run/cc-oci-runtime/proxy.sock"
 cc-proxy: $(cc_proxy_sources)
-	$(AM_V_GO)go build -o $@ -ldflags=$(proxy_ldflags) $(srcdir)/proxy
+	$(AM_V_GO)
+	[ -n "$$GOPATH" ] || \
+		( \
+			export GOPATH=$$(readlink -f $(srcdir))/.gopath ; \
+			rm -rf "$$GOPATH"; \
+			mkdir "$$GOPATH"; \
+			mkdir -p "$$GOPATH"/src/github.com/01org/ ; \
+			ln -sf $$(readlink -f $(srcdir)) "$$GOPATH"/src/github.com/01org/cc-oci-runtime ; \
+			cp -r $(srcdir)/vendor/* "$$GOPATH/src" ;\
+			go build -o $@ -ldflags=$(proxy_ldflags) $(srcdir)/proxy ;\
+		)
 
 cc_proxy_sources =			\
 	proxy/api/api.go		\
@@ -270,7 +280,11 @@ cc_proxy_extra_dist =			\
 CHECK_DEPS += check-proxy
 
 check-proxy:
-	go test -v -race -timeout 2s $(srcdir)/proxy
+	[ -n "$$GOPATH" ] || \
+		( \
+			export GOPATH=$$(readlink -f $(srcdir))/.gopath ; \
+			go test -v -race -timeout 2s $(srcdir)/proxy ; \
+		)
 
 libexec_PROGRAMS = cc-shim
 
