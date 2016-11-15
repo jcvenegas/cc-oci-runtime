@@ -1317,8 +1317,8 @@ cc_oci_exec_shim (struct cc_oci_config *config,
 	}
 
 	/* save ioBase */
-	config->oci.process.stdio_stream = ioBase;
-	config->oci.process.stderr_stream = ioBase + 1;
+	process->stdio_stream = ioBase;
+	process->stderr_stream = ioBase + 1;
 
 	/*
 	 * 3. The child blocks waiting for a write proxy IO fd to shim_socket_fd.
@@ -1400,12 +1400,22 @@ cc_oci_vm_connect (struct cc_oci_config *config,
 	if (! cc_proxy_connect (config->proxy)) {
 		goto out;
 	}
+
 	if (! cc_proxy_attach (config->proxy, config->optarg_container_id)) {
 		goto out;
 	}
+
 	if (! cc_oci_exec_shim (config, process)) {
 		goto out;
 	}
+
+	if (! cc_proxy_hyper_exec_command (config, process)) {
+		goto out;
+	}
+
+	//if (cc_oci_exec_have_to_wait()) {
+		/* FIXME: wait exec-shim or qemu finish */
+	//}
 
 #if 0
 	/* create a new main loop */

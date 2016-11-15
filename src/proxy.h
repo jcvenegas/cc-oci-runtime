@@ -38,5 +38,6 @@ gboolean cc_proxy_cmd_allocate_io (struct cc_proxy *proxy, int *proxy_io_fd,
 gboolean cc_proxy_hyper_new_container (struct cc_oci_config *config);
 void cc_proxy_free (struct cc_proxy *proxy);
 gboolean cc_proxy_attach (struct cc_proxy *proxy, const char *container_id);
-
+gboolean cc_proxy_hyper_exec_command (struct cc_oci_config *config,
+		struct oci_cfg_process *process);
 #endif /* _CC_OCI_PROXY_H */
