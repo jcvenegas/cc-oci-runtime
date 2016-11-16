@@ -1247,8 +1247,7 @@ exit:
  * \return \c true on success, else \c false.
  */
 gboolean
-cc_oci_exec_shim (struct cc_oci_config *config,
-		struct oci_cfg_process *process) {
+cc_oci_exec_shim (struct cc_oci_config *config) {
 
 	gboolean           ret = false;
 	GSocketConnection *shim_socket_connection = NULL;
@@ -1262,7 +1261,7 @@ cc_oci_exec_shim (struct cc_oci_config *config,
 	int                ioBase = -1;
 	GError            *error = NULL;
 
-	if(! (config && process)){
+	if(! config){
 		return false;
 	}
 
@@ -1303,8 +1302,8 @@ cc_oci_exec_shim (struct cc_oci_config *config,
 	}
 
 	/* save ioBase */
-	process->stdio_stream = ioBase;
-	process->stderr_stream = ioBase + 1;
+	config->oci.process.stdio_stream = ioBase;
+	config->oci.process.stderr_stream = ioBase + 1;
 
 	/*
 	 * 3. The child blocks waiting for a write proxy IO fd to shim_socket_fd.
@@ -1368,8 +1367,7 @@ out:
  * \return \c true on success, else \c false.
  */
 gboolean
-cc_oci_vm_connect (struct cc_oci_config *config,
-		struct oci_cfg_process *process)
+cc_oci_vm_connect (struct cc_oci_config *config)
 {
 	gchar     **args = NULL;
 	gboolean    ret = false;
@@ -1384,7 +1382,7 @@ cc_oci_vm_connect (struct cc_oci_config *config,
 	guint i;
 #endif
 
-	if(! (config && process)){
+	if(! config){
 		goto out;
 	}
 
@@ -1396,11 +1394,11 @@ cc_oci_vm_connect (struct cc_oci_config *config,
 		goto out;
 	}
 
-	if (! cc_oci_exec_shim (config, process)) {
+	if (! cc_oci_exec_shim (config)) {
 		goto out;
 	}
 
-	if (! cc_proxy_hyper_exec_command (config, process)) {
+	if (! cc_proxy_hyper_exec_command (config)) {
 		goto out;
 	}
 
