@@ -186,6 +186,10 @@ handler_exec (const struct subcommand *sub,
 	if (! ret) {
 		goto out;
 	}
+	/* Update config so that the pod pointer is accurate. */
+	if (! cc_oci_config_update (config, state)) {
+		goto out;
+	}
 
 	g_free_if_set(config->console);
 	config->console = g_strdup(start_data.console);
