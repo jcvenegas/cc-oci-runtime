@@ -1,5 +1,6 @@
 [Unit]
 Description=Clear Container Agent
+After=cc-debug-console.service
 
 [Service]
 StandardOutput=tty
