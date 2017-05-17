@@ -18,7 +18,6 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program; if not, write to the Free Software
 #  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
-#
 
 AC_PREREQ([2.69])
 AC_INIT([cc-oci-runtime], [2.1.8])
@@ -35,9 +34,9 @@ LT_INIT
 source $srcdir/versions.txt
 
 # Check for macros
-AC_DEFUN_ONCE([MACRO_CHECK],
+AC_DEFUN([MACRO_CHECK],
 [
-	ifdef([$1], true, [AC_FATAL([Please install autoconf-archive version ${autoconf_archive_version}],)])
+	ifdef([$1], AC_SUBST(m4_toupper([HAS_$1]), [yes]), AC_SUBST(m4_toupper([HAS_$1]), [no]) )
 ])
 
 MACRO_CHECK([AX_VALGRIND_DFLT])
@@ -375,9 +374,31 @@ AC_ARG_ENABLE([autogopath],
 )
 AM_CONDITIONAL([AUTOGOPATH], [test x$autogopath = xtrue])
 
-AX_VALGRIND_DFLT([sgcheck], [off])
-AX_VALGRIND_CHECK
-AX_CODE_COVERAGE
+
+# Define function if was m4 does not exist
+AS_IF([test x"$HAS_AX_VALGRIND_DFLT" != xyes ],
+	  AC_DEFUN([AX_VALGRIND_DFLT],[AC_MSG_WARN(VALGRIND_DFLT : not defined)])dnl
+	  )
+
+AS_IF([test x"$HAS_AX_VALGRIND_DFLT" = xyes],
+	  [AX_VALGRIND_DFLT([sgcheck], [off])],
+	  [
+	   AC_SUBST([VALGRIND_ENABLED], [no])
+	   AM_CONDITIONAL([VALGRIND_ENABLED], [0])
+	  ]
+	  )
+
+AS_IF([test x"$HAS_AX_VALGRIND_CHECK" = xyes],
+	  [AX_VALGRIND_CHECK]
+	  )
+
+AS_IF([test x"$HAS_AX_CODE_COVERAGE" = xyes],
+	  [AX_CODE_COVERAGE],
+	  [
+	   AC_SUBST([CODE_COVERAGE_ENABLED], [no])
+	   AM_CONDITIONAL([CODE_COVERAGE_ENABLED], [0])
+	   ]
+	  )
 
 AC_OUTPUT
 
@@ -412,6 +433,9 @@ cc-oci-runtime - $VERSION
        Docker tests             : $run_docker_tests
        CRI-O tests              : $run_crio_tests
        Cppcheck                 : $enable_cppcheck
+       has [AX_CODE_COVERAGE]     : $HAS_AX_CODE_COVERAGE
+       has [AX_VALGRIND_DFLT]     : $HAS_AX_VALGRIND_DFLT
+       has [AX_VALGRIND_CHECK]    : $HAS_AX_VALGRIND_CHECK
        Valgrind                 : $VALGRIND_ENABLED
        Code coverage            : $CODE_COVERAGE_ENABLED
        Bundle path              : $BUNDLE_TEST_PATH
